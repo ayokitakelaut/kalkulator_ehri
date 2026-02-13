@@ -11,9 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+      - name: Install System Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y python3-pip python3-setuptools git zip unzip openjdk-17-jdk
+          pip install --upgrade pip
+          pip install buildozer cython
 
       - name: Create main.py
         run: |
@@ -73,28 +76,21 @@ jobs:
               EHRIApp().run()
           EOF
 
-      - name: Create buildozer.spec
+      - name: Initialize Buildozer
         run: |
-          cat << 'EOF' > buildozer.spec
-          [app]
-          title = EHRI Calculator
-          package.name = ehricalculator
-          package.domain = org.ehri
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas
-          version = 1.0
-          requirements = python3,kivy
-          orientation = portrait
-          fullscreen = 0
-          android.archs = arm64-v8a
-          android.allow_backup = True
-          EOF
+          buildozer init
+
+      - name: Modify buildozer.spec
+        run: |
+          sed -i 's/title = .*/title = EHRI Calculator/' buildozer.spec
+          sed -i 's/package.name = .*/package.name = ehricalculator/' buildozer.spec
+          sed -i 's/package.domain = .*/package.domain = org.ehri/' buildozer.spec
+          sed -i 's/requirements = .*/requirements = python3,kivy/' buildozer.spec
+          sed -i 's/orientation = .*/orientation = portrait/' buildozer.spec
 
       - name: Build APK
-        uses: ArtemSerebriakov/buildozer-action@v1
-        with:
-          command: buildozer android debug
-          repository_root: .
+        run: |
+          buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
