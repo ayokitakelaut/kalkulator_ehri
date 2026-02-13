@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Install Dependencies
         run: |
           sudo apt update
           sudo apt install -y python3-pip git zip unzip openjdk-17-jdk wget
@@ -30,6 +30,7 @@ jobs:
           class EHRIApp(App):
               def build(self):
                   layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+
                   labels = [
                       "Sanitasi (%)",
                       "Air Bersih (%)",
@@ -82,15 +83,17 @@ jobs:
           cd $HOME/android-sdk
           wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O sdk.zip
           unzip sdk.zip
-          mkdir -p cmdline-tools/latest
-          mv cmdline-tools/* cmdline-tools/latest/
+
+          mv cmdline-tools cmdline-tools-temp
+          mkdir cmdline-tools
+          mv cmdline-tools-temp cmdline-tools/latest
 
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
 
-      - name: Accept Licenses and Install SDK Packages
+      - name: Accept Licenses & Install SDK
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
