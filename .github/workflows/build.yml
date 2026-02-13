@@ -1,26 +1,25 @@
 name: Build EHRI APK
-on: [push, workflow_dispatch]
+
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Create EHRI App Files
+      - name: Create main.py
         run: |
-          python - <<EOF
-          # =========================
-          # FILE 1: main.py
-          # =========================
-          main_code = """
-from kivy.app import App
+          echo 'from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
@@ -28,9 +27,8 @@ from kivy.uix.label import Label
 
 class EHRIApp(App):
     def build(self):
-        self.layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
 
-        self.inputs = []
         labels = [
             "Sanitasi (%)",
             "Air Bersih (%)",
@@ -39,59 +37,47 @@ class EHRIApp(App):
             "Kemiskinan (%)"
         ]
 
+        self.inputs = []
+
         for text in labels:
-            self.layout.add_widget(Label(text=text))
-            inp = TextInput(multiline=False, input_filter='float')
-            self.layout.add_widget(inp)
+            layout.add_widget(Label(text=text))
+            inp = TextInput(multiline=False, input_filter="float")
+            layout.add_widget(inp)
             self.inputs.append(inp)
 
-        btn = Button(text="Hitung EHRI", size_hint=(1, 0.2))
+        btn = Button(text="Hitung EHRI")
         btn.bind(on_press=self.calculate)
-        self.layout.add_widget(btn)
+        layout.add_widget(btn)
 
-        self.result = Label(text="Hasil: ")
-        self.layout.add_widget(self.result)
+        self.result = Label(text="Hasil:")
+        layout.add_widget(self.result)
 
-        return self.layout
-
-    def normalize(self, value, min_val=0, max_val=100):
-        return ((value - min_val) / (max_val - min_val)) * 100
+        return layout
 
     def calculate(self, instance):
         try:
-            values = [float(inp.text) for inp in self.inputs]
-
-            # Normalisasi (asumsi 0–100)
-            scores = [self.normalize(v) for v in values]
-
-            # Bobot
+            values = [float(i.text) for i in self.inputs]
             weights = [0.30, 0.25, 0.15, 0.20, 0.10]
-
-            ehri = sum(s * w for s, w in zip(scores, weights))
+            ehri = sum(v*w for v,w in zip(values, weights))
 
             if ehri <= 33:
-                category = "Risiko Rendah"
+                kategori = "Risiko Rendah"
             elif ehri <= 66:
-                category = "Risiko Sedang"
+                kategori = "Risiko Sedang"
             else:
-                category = "Risiko Tinggi"
+                kategori = "Risiko Tinggi"
 
-            self.result.text = f"EHRI: {ehri:.2f} | {category}"
+            self.result.text = f"EHRI: {ehri:.2f} | {kategori}"
 
         except:
             self.result.text = "Input tidak valid"
 
 if __name__ == "__main__":
-    EHRIApp().run()
-"""
-          with open("main.py", "w") as f:
-              f.write(main_code)
+    EHRIApp().run()' > main.py
 
-          # =========================
-          # FILE 2: buildozer.spec
-          # =========================
-          spec_code = """
-[app]
+      - name: Create buildozer.spec
+        run: |
+          echo '[app]
 title = EHRI Calculator
 package.name = ehricalculator
 package.domain = org.ehri
@@ -102,13 +88,9 @@ requirements = python3,kivy
 orientation = portrait
 fullscreen = 0
 android.archs = arm64-v8a
-android.allow_backup = True
-"""
-          with open("buildozer.spec", "w") as f:
-              f.write(spec_code)
-          EOF
+android.allow_backup = True' > buildozer.spec
 
-      - name: Build APK with Buildozer
+      - name: Build APK
         uses: ArtemSerebriakov/buildozer-action@v1
         with:
           command: buildozer android debug
