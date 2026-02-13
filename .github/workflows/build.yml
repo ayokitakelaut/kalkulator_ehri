@@ -9,86 +9,86 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Create main.py
         run: |
-          echo 'from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.uix.label import Label
+          cat << 'EOF' > main.py
+          from kivy.app import App
+          from kivy.uix.boxlayout import BoxLayout
+          from kivy.uix.textinput import TextInput
+          from kivy.uix.button import Button
+          from kivy.uix.label import Label
 
-class EHRIApp(App):
-    def build(self):
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+          class EHRIApp(App):
+              def build(self):
+                  layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+                  labels = [
+                      "Sanitasi (%)",
+                      "Air Bersih (%)",
+                      "Kepadatan Penduduk",
+                      "Kasus Diare (%)",
+                      "Kemiskinan (%)"
+                  ]
 
-        labels = [
-            "Sanitasi (%)",
-            "Air Bersih (%)",
-            "Kepadatan Penduduk",
-            "Kasus Diare (%)",
-            "Kemiskinan (%)"
-        ]
+                  self.inputs = []
 
-        self.inputs = []
+                  for text in labels:
+                      layout.add_widget(Label(text=text))
+                      inp = TextInput(multiline=False, input_filter="float")
+                      layout.add_widget(inp)
+                      self.inputs.append(inp)
 
-        for text in labels:
-            layout.add_widget(Label(text=text))
-            inp = TextInput(multiline=False, input_filter="float")
-            layout.add_widget(inp)
-            self.inputs.append(inp)
+                  btn = Button(text="Hitung EHRI")
+                  btn.bind(on_press=self.calculate)
+                  layout.add_widget(btn)
 
-        btn = Button(text="Hitung EHRI")
-        btn.bind(on_press=self.calculate)
-        layout.add_widget(btn)
+                  self.result = Label(text="Hasil:")
+                  layout.add_widget(self.result)
 
-        self.result = Label(text="Hasil:")
-        layout.add_widget(self.result)
+                  return layout
 
-        return layout
+              def calculate(self, instance):
+                  try:
+                      values = [float(i.text) for i in self.inputs]
+                      weights = [0.30, 0.25, 0.15, 0.20, 0.10]
+                      ehri = sum(v*w for v,w in zip(values, weights))
 
-    def calculate(self, instance):
-        try:
-            values = [float(i.text) for i in self.inputs]
-            weights = [0.30, 0.25, 0.15, 0.20, 0.10]
-            ehri = sum(v*w for v,w in zip(values, weights))
+                      if ehri <= 33:
+                          kategori = "Risiko Rendah"
+                      elif ehri <= 66:
+                          kategori = "Risiko Sedang"
+                      else:
+                          kategori = "Risiko Tinggi"
 
-            if ehri <= 33:
-                kategori = "Risiko Rendah"
-            elif ehri <= 66:
-                kategori = "Risiko Sedang"
-            else:
-                kategori = "Risiko Tinggi"
+                      self.result.text = f"EHRI: {ehri:.2f} | {kategori}"
+                  except:
+                      self.result.text = "Input tidak valid"
 
-            self.result.text = f"EHRI: {ehri:.2f} | {kategori}"
-
-        except:
-            self.result.text = "Input tidak valid"
-
-if __name__ == "__main__":
-    EHRIApp().run()' > main.py
+          if __name__ == "__main__":
+              EHRIApp().run()
+          EOF
 
       - name: Create buildozer.spec
         run: |
-          echo '[app]
-title = EHRI Calculator
-package.name = ehricalculator
-package.domain = org.ehri
-source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
-version = 1.0
-requirements = python3,kivy
-orientation = portrait
-fullscreen = 0
-android.archs = arm64-v8a
-android.allow_backup = True' > buildozer.spec
+          cat << 'EOF' > buildozer.spec
+          [app]
+          title = EHRI Calculator
+          package.name = ehricalculator
+          package.domain = org.ehri
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas
+          version = 1.0
+          requirements = python3,kivy
+          orientation = portrait
+          fullscreen = 0
+          android.archs = arm64-v8a
+          android.allow_backup = True
+          EOF
 
       - name: Build APK
         uses: ArtemSerebriakov/buildozer-action@v1
