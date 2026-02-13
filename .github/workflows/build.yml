@@ -1,4 +1,4 @@
-name: Build EHRI APK CLEAN
+name: Build EHRI APK (Docker Stable)
 
 on:
   push:
@@ -10,23 +10,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      # 💣 HANCURKAN SEMUA CACHE ANDROID & BUILDOZER
-      - name: Destroy All Android & Buildozer Cache
-        run: |
-          rm -rf ~/.buildozer
-          rm -rf ~/.gradle
-          rm -rf ~/.android
-          rm -rf ~/.cache
-          rm -rf $HOME/android-sdk
-          echo "All caches destroyed."
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y python3-pip git zip unzip openjdk-17-jdk wget
-          pip install --upgrade pip
-          pip install buildozer==1.5.0 cython
 
       - name: Create main.py
         run: |
@@ -87,26 +70,30 @@ jobs:
               EHRIApp().run()
           EOF
 
-      - name: Initialize Buildozer Spec (FORCED 33 ONLY)
+      - name: Create buildozer.spec
         run: |
-          buildozer init
-          sed -i 's/title = .*/title = EHRI Calculator/' buildozer.spec
-          sed -i 's/package.name = .*/package.name = ehricalculator/' buildozer.spec
-          sed -i 's/package.domain = .*/package.domain = org.ehri/' buildozer.spec
-          sed -i 's/requirements = .*/requirements = python3,kivy/' buildozer.spec
-          sed -i 's/orientation = .*/orientation = portrait/' buildozer.spec
+          cat << 'EOF' > buildozer.spec
+          [app]
+          title = EHRI Calculator
+          package.name = ehricalculator
+          package.domain = org.ehri
+          source.dir = .
+          source.include_exts = py
+          version = 1.0
+          requirements = python3,kivy
+          orientation = portrait
 
-          echo "" >> buildozer.spec
-          echo "android.api = 33" >> buildozer.spec
-          echo "android.minapi = 21" >> buildozer.spec
-          echo "android.sdk = 33" >> buildozer.spec
-          echo "android.ndk = 25b" >> buildozer.spec
-          echo "android.build_tools_version = 33.0.2" >> buildozer.spec
-          echo "android.accept_sdk_license = True" >> buildozer.spec
+          [buildozer]
+          log_level = 2
+          warn_on_root = 1
+          EOF
 
-      - name: Build APK
+      - name: Build APK using Official Kivy Docker
         run: |
-          buildozer android debug
+          docker run --rm \
+            -v ${{ github.workspace }}:/home/user/hostcwd \
+            kivy/buildozer \
+            buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
