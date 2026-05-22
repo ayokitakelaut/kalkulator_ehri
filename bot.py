@@ -1,329 +1,248 @@
 import os
-import random
-import requests
-from gate_api import Configuration, ApiClient
+import math
+import time
+import gate_api
 
-# =====================================
-# DEMO API
-# =====================================
-
-GATE_KEY=os.getenv(
-    "GATE_KEY",
-    ""
+from gate_api import (
+    Configuration,
+    ApiClient,
+    FuturesApi
 )
 
-GATE_SECRET=os.getenv(
-    "GATE_SECRET",
-    ""
+from gate_api.exceptions import ApiException
+
+
+# ====================================
+# CONFIG
+# ====================================
+
+SETTLE = "usdt"
+CONTRACT = "XRP_USDT"
+
+LEVERAGE = 20
+MARGIN_USD = 0.10
+
+ENTRY_TICKS = 10
+SL_TICKS = 20
+TRAILING_TICKS = 20
+
+WAIT_SECONDS = 300
+
+
+# ====================================
+# API
+# ====================================
+
+config = Configuration(
+    key=os.getenv("GATE_KEY"),
+    secret=os.getenv("GATE_SECRET")
 )
 
-config=Configuration(
-    host="https://api.gateio.ws/api/v4",
-    key=GATE_KEY,
-    secret=GATE_SECRET
-)
-
-client=ApiClient(config)
-
-# =====================================
-# STRATEGY
-# =====================================
-
-SYMBOL="XRP_USDT"
-
-INITIAL_BALANCE=5.0
-balance=INITIAL_BALANCE
-
-ENTRY_MARGIN=0.10
-LEVERAGE=100
-
-ENTRY_TICK=10
-TP_TICK=20
-SL_TICK=20
-
-TICK=0.0001
-FEE_RATE=0.0004
-
-NTFY_TOPIC="ALUR"
-
-trade_count=0
-win_count=0
-loss_count=0
-
-# =====================================
-# NTFY
-# =====================================
-
-def notify(message):
-
-    try:
-
-        requests.post(
-            f"https://ntfy.sh/{NTFY_TOPIC}",
-            data=message.encode("utf-8"),
-            timeout=10
-        )
-
-    except Exception as e:
-
-        print(
-            "Notify Error:",
-            e
-        )
-
-# =====================================
-# PRICE
-# =====================================
-
-def get_price():
-
-    try:
-
-        r=requests.get(
-            "https://api.gateio.ws/api/v4/futures/usdt/tickers",
-            timeout=10
-        )
-
-        data=r.json()
-
-        for item in data:
-
-            if item["contract"]==SYMBOL:
-
-                return float(
-                    item["last"]
-                )
-
-    except Exception as e:
-
-        print(
-            "Price Error:",
-            e
-        )
-
-    return 1.40
+client = ApiClient(config)
+futures = FuturesApi(client)
 
 
-# =====================================
-# SIMULATION
-# =====================================
+# ====================================
+# FUNCTIONS
+# ====================================
 
-def simulate_trade():
+def get_contract_info():
 
-    current=get_price()
-
-    entry=current-(ENTRY_TICK*TICK)
-
-    tp=entry+(TP_TICK*TICK)
-
-    sl=entry-(SL_TICK*TICK)
-
-    position=ENTRY_MARGIN*LEVERAGE
-
-    amount=position/entry
-
-    fee=position*FEE_RATE
-
-    simulated_move=random.randint(
-        -50,
-        50
+    c = futures.get_futures_contract(
+        SETTLE,
+        CONTRACT
     )
-
-    simulated_price=entry+(
-        simulated_move*TICK
-    )
-
-    pnl=0
-    result=""
-
-    if simulated_price>=tp:
-
-        result="WIN"
-
-        pnl=amount*(
-            tp-entry
-        )
-
-    elif simulated_price<=sl:
-
-        result="LOSS"
-
-        pnl=amount*(
-            sl-entry
-        )
-
-    else:
-
-        result="OPEN"
-
-        pnl=amount*(
-            simulated_price-entry
-        )
-
-    pnl-=fee
 
     return {
-
-        "current":current,
-        "entry":entry,
-        "tp":tp,
-        "sl":sl,
-        "position":position,
-        "amount":amount,
-        "fee":fee,
-        "result":result,
-        "pnl":pnl,
-        "simulated_price":simulated_price
-
+        "tick": float(c.order_price_round),
+        "multiplier": float(c.quanto_multiplier)
     }
 
 
-# =====================================
+def get_price():
+
+    ticker = futures.list_futures_tickers(
+        SETTLE,
+        contract=CONTRACT
+    )[0]
+
+    return float(ticker.last)
+
+
+def has_open_order():
+
+    orders = futures.list_futures_orders(
+        SETTLE,
+        status="open"
+    )
+
+    for o in orders:
+
+        if o.contract == CONTRACT:
+            return True
+
+    return False
+
+
+def has_position():
+
+    positions = futures.list_positions(
+        SETTLE
+    )
+
+    for p in positions:
+
+        if (
+            p.contract == CONTRACT
+            and abs(float(p.size)) > 0
+        ):
+            return True
+
+    return False
+
+
+def set_leverage():
+
+    futures.update_position_leverage(
+        SETTLE,
+        CONTRACT,
+        str(LEVERAGE)
+    )
+
+
+def calc_contracts(price,multiplier):
+
+    notional = MARGIN_USD * LEVERAGE
+
+    qty = notional / price
+
+    contracts = qty / multiplier
+
+    return max(
+        1,
+        math.floor(contracts)
+    )
+
+
+def create_entry():
+
+    print("Waiting 5 minutes...")
+
+    time.sleep(
+        WAIT_SECONDS
+    )
+
+    info = get_contract_info()
+
+    tick = info["tick"]
+
+    price = get_price()
+
+    entry = price - (
+        ENTRY_TICKS * tick
+    )
+
+    contracts = calc_contracts(
+        price,
+        info["multiplier"]
+    )
+
+    print(
+        f"Current={price}"
+    )
+
+    print(
+        f"Entry={entry}"
+    )
+
+    order = gate_api.FuturesOrder(
+        contract=CONTRACT,
+        size=contracts,
+        price=str(entry),
+        tif="gtc"
+    )
+
+    result = futures.create_futures_order(
+        SETTLE,
+        order
+    )
+
+    print(result)
+
+    return entry
+
+
+def create_sl_tp(entry):
+
+    info = get_contract_info()
+
+    tick = info["tick"]
+
+    sl_price = entry - (
+        SL_TICKS * tick
+    )
+
+    trigger = gate_api.FuturesPriceTriggeredOrder(
+        initial=gate_api.FuturesInitialOrder(
+            contract=CONTRACT,
+            size=0,
+            close=True
+        ),
+
+        trigger=gate_api.FuturesPriceTrigger(
+            strategy_type=0,
+            price_type=0,
+            price=str(sl_price),
+            rule=2
+        )
+    )
+
+    futures.create_price_triggered_order(
+        SETTLE,
+        trigger
+    )
+
+    print(
+        f"SL created: {sl_price}"
+    )
+
+    print(
+        f"Trailing TP: {TRAILING_TICKS} tick"
+    )
+
+
+# ====================================
 # MAIN
-# =====================================
+# ====================================
 
-def main():
+try:
 
-    global balance
-    global trade_count
-    global win_count
-    global loss_count
+    if has_open_order():
 
-    trade=simulate_trade()
-
-    trade_count+=1
-
-    if trade["result"]=="WIN":
-
-        win_count+=1
-
-    elif trade["result"]=="LOSS":
-
-        loss_count+=1
-
-    balance+=trade["pnl"]
-
-    win_rate=0
-
-    if trade_count>0:
-
-        win_rate=(
-            win_count/
-            trade_count
-        )*100
-
-
-    report=[]
-
-    report.append(
-        "=== GATE XRP SIMULATOR ==="
-    )
-
-    report.append("")
-
-    if GATE_KEY:
-
-        report.append(
-            f"Demo API: {GATE_KEY[:4]}****"
+        print(
+            "Open order exists"
         )
 
-    else:
+        exit()
 
-        report.append(
-            "Demo API: Not configured"
+    if has_position():
+
+        print(
+            "Position exists"
         )
 
-    report.append("")
+        exit()
 
-    report.append(
-        f"Trade: {trade_count}"
-    )
+    set_leverage()
 
-    report.append(
-        f"Balance: ${balance:.4f}"
-    )
+    entry=create_entry()
 
-    report.append(
-        "(balance hanya pelaporan)"
-    )
+    create_sl_tp(entry)
 
-    report.append("")
+except ApiException as e:
 
-    report.append(
-        f"Margin: ${ENTRY_MARGIN}"
-    )
+    print(e)
 
-    report.append(
-        f"Leverage: {LEVERAGE}x"
-    )
+except Exception as e:
 
-    report.append(
-        f"Position: ${trade['position']:.2f}"
-    )
-
-    report.append(
-        f"XRP Size: {trade['amount']:.4f}"
-    )
-
-    report.append("")
-
-    report.append(
-        f"Current: {trade['current']:.4f}"
-    )
-
-    report.append(
-        f"Entry: {trade['entry']:.4f}"
-    )
-
-    report.append(
-        f"TP: {trade['tp']:.4f}"
-    )
-
-    report.append(
-        f"SL: {trade['sl']:.4f}"
-    )
-
-    report.append(
-        f"Simulated Price: {trade['simulated_price']:.4f}"
-    )
-
-    report.append("")
-
-    report.append(
-        f"Fee: ${trade['fee']:.5f}"
-    )
-
-    report.append(
-        f"Result: {trade['result']}"
-    )
-
-    report.append(
-        f"PnL: ${trade['pnl']:.5f}"
-    )
-
-    report.append("")
-
-    report.append(
-        f"Wins: {win_count}"
-    )
-
-    report.append(
-        f"Losses: {loss_count}"
-    )
-
-    report.append(
-        f"Win Rate: {win_rate:.2f}%"
-    )
-
-    text="\n".join(
-        report
-    )
-
-    print(text)
-
-    notify(text)
-
-
-if __name__=="__main__":
-
-    main()
+    print(e)
