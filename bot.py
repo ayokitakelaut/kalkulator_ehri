@@ -7,44 +7,44 @@ from gate_api import (
     Configuration,
     FuturesApi,
     SpotApi,
-    FuturesOrder,
+    FuturesOrder
 )
 
-# =========================================================
+# =====================================================
 # CONFIG
-# =========================================================
+# =====================================================
 
-SYMBOL = "XRP_USDT"
-SETTLE = "usdt"
+SYMBOL="XRP_USDT"
+SETTLE="usdt"
 
-LEVERAGE = 30
-ENTRY_MARGIN = 1
+LEVERAGE=30
+ENTRY_MARGIN=1
 
-ENTRY_OFFSET_TICK = 10
-EXIT_OFFSET_TICK = 100
+ENTRY_OFFSET_TICK=10
+EXIT_OFFSET_TICK=100
 
-MIN_BALANCE = 5
+MIN_BALANCE=5
 
-NTFY_TOPIC = "ALUR"
+NTFY_TOPIC="ALUR"
 
-# =========================================================
+# =====================================================
 # API
-# =========================================================
+# =====================================================
 
-config = Configuration(
+config=Configuration(
     host="https://api.gateio.ws/api/v4",
     key=os.environ["GATE_KEY"],
     secret=os.environ["GATE_SECRET"]
 )
 
-client = ApiClient(config)
+client=ApiClient(config)
 
-futures_api = FuturesApi(client)
-spot_api = SpotApi(client)
+futures_api=FuturesApi(client)
+spot_api=SpotApi(client)
 
-# =========================================================
+# =====================================================
 # NTFY
-# =========================================================
+# =====================================================
 
 def notify(message):
 
@@ -54,83 +54,127 @@ def notify(message):
             f"https://ntfy.sh/{NTFY_TOPIC}",
             data=message.encode("utf-8"),
             headers={
-                "Title": "Gate Bot",
-                "Priority": "default"
+                "Title":"Gate Bot",
+                "Priority":"default"
             },
             timeout=15
         )
 
     except Exception as e:
-        print("NTFY ERROR:", e)
 
-# =========================================================
+        print("NTFY ERROR:",e)
+
+# =====================================================
 # BALANCE
-# =========================================================
+# =====================================================
 
 def get_spot_balance():
 
-    accounts = spot_api.list_spot_accounts(
-        currency="USDT"
-    )
+    try:
 
-    total = 0.0
+        accounts=spot_api.list_spot_accounts(
+            currency="USDT"
+        )
 
-    for a in accounts:
-        total += float(a.available)
+        total=0.0
 
-    return total
+        for a in accounts:
+
+            try:
+                total+=float(a.available)
+            except:
+                pass
+
+        return total
+
+    except:
+
+        return 0.0
 
 
 def get_futures_balance():
 
-    accounts = futures_api.list_futures_accounts(
-        settle=SETTLE
-    )
+    try:
 
-    total = 0.0
+        account=futures_api.list_futures_accounts(
+            settle=SETTLE
+        )
 
-    for a in accounts:
-        total += float(a.available)
+        try:
+            return float(account.available)
 
-    return total
+        except:
 
-# =========================================================
-# OPEN POSITION / ORDER
-# =========================================================
+            try:
+                return float(account.total)
+
+            except:
+                return 0.0
+
+    except:
+
+        return 0.0
+
+
+# =====================================================
+# OPEN POSITION
+# =====================================================
 
 def has_open_position():
 
-    positions = futures_api.list_positions(
-        settle=SETTLE
-    )
+    try:
 
-    for p in positions:
+        positions=futures_api.list_positions(
+            settle=SETTLE
+        )
 
-        if p.contract == SYMBOL:
+        for p in positions:
 
-            if abs(float(p.size)) > 0:
-                return True
+            if p.contract==SYMBOL:
+
+                try:
+
+                    if abs(float(p.size))>0:
+                        return True
+
+                except:
+                    pass
+
+    except Exception as e:
+
+        print(e)
 
     return False
 
+
+# =====================================================
+# OPEN ORDER
+# =====================================================
 
 def has_open_order():
 
-    orders = futures_api.list_futures_orders(
-        settle=SETTLE,
-        status="open"
-    )
+    try:
 
-    for o in orders:
+        orders=futures_api.list_futures_orders(
+            settle=SETTLE,
+            status="open"
+        )
 
-        if o.contract == SYMBOL:
-            return True
+        for o in orders:
+
+            if o.contract==SYMBOL:
+                return True
+
+    except Exception as e:
+
+        print(e)
 
     return False
 
-# =========================================================
-# MARKET DATA
-# =========================================================
+
+# =====================================================
+# MARKET
+# =====================================================
 
 def get_contract():
 
@@ -142,187 +186,220 @@ def get_contract():
 
 def get_price():
 
-    ticker = futures_api.list_futures_tickers(
+    ticker=futures_api.list_futures_tickers(
         settle=SETTLE,
         contract=SYMBOL
     )
 
     return float(ticker[0].last)
 
-# =========================================================
+
+# =====================================================
 # LEVERAGE
-# =========================================================
+# =====================================================
 
 def set_leverage():
 
-    futures_api.update_position_leverage(
-        settle=SETTLE,
-        contract=SYMBOL,
-        leverage=str(LEVERAGE)
-    )
+    try:
 
-# =========================================================
+        futures_api.update_position_leverage(
+            settle=SETTLE,
+            contract=SYMBOL,
+            leverage=str(LEVERAGE)
+        )
+
+        return True
+
+    except Exception as e:
+
+        print(e)
+
+        return False
+
+
+# =====================================================
 # MAIN
-# =========================================================
+# =====================================================
 
 def main():
 
-    logs = []
+    logs=[]
 
     logs.append("=== GATE BOT REPORT ===")
 
-    # -----------------------------------------------------
+    # -------------------------------------
 
-    spot_balance = get_spot_balance()
-    futures_balance = get_futures_balance()
+    spot_balance=get_spot_balance()
 
-    total_balance = spot_balance + futures_balance
+    futures_balance=get_futures_balance()
 
-    logs.append(f"Spot Balance    : ${spot_balance:.4f}")
-    logs.append(f"Futures Balance : ${futures_balance:.4f}")
-    logs.append(f"Total Balance   : ${total_balance:.4f}")
+    total_balance=spot_balance+futures_balance
 
-    # -----------------------------------------------------
-    # SAFETY FILTER
-    # -----------------------------------------------------
+    logs.append(
+        f"Spot : ${spot_balance:.4f}"
+    )
 
-    if total_balance < MIN_BALANCE:
+    logs.append(
+        f"Futures : ${futures_balance:.4f}"
+    )
+
+    logs.append(
+        f"Total : ${total_balance:.4f}"
+    )
+
+    # -------------------------------------
+    # BALANCE FILTER
+    # -------------------------------------
+
+    if total_balance<MIN_BALANCE:
 
         logs.append("")
-        logs.append("STATUS : BALANCE BELOW MINIMUM")
-        logs.append("TRADE CANCELLED")
+        logs.append(
+            "STATUS : BALANCE BELOW MINIMUM"
+        )
 
-        message = "\n".join(logs)
+        msg="\n".join(logs)
 
-        print(message)
+        print(msg)
 
-        notify(message)
+        notify(msg)
 
         return
 
-    # -----------------------------------------------------
-    # SINGLE POSITION RULE
-    # -----------------------------------------------------
+    # -------------------------------------
+    # POSITION FILTER
+    # -------------------------------------
 
-    open_position = has_open_position()
-    open_order = has_open_order()
+    position=has_open_position()
+
+    order=has_open_order()
 
     logs.append("")
-    logs.append(f"Open Position : {open_position}")
-    logs.append(f"Open Order    : {open_order}")
+    logs.append(
+        f"Open Position : {position}"
+    )
 
-    if open_position or open_order:
+    logs.append(
+        f"Open Order : {order}"
+    )
+
+    if position or order:
 
         logs.append("")
-        logs.append("STATUS : EXISTING POSITION/ORDER DETECTED")
-        logs.append("SKIP TRADE")
+        logs.append(
+            "STATUS : EXISTING TRADE DETECTED"
+        )
 
-        message = "\n".join(logs)
+        msg="\n".join(logs)
 
-        print(message)
+        print(msg)
 
-        notify(message)
+        notify(msg)
 
         return
 
-    # -----------------------------------------------------
-    # MARKET INFO
-    # -----------------------------------------------------
+    # -------------------------------------
+    # PRICE
+    # -------------------------------------
 
-    contract = get_contract()
+    contract=get_contract()
 
-    current_price = get_price()
+    current=get_price()
 
-    tick = float(contract.order_price_round)
+    tick=float(
+        contract.order_price_round
+    )
 
-    entry_price = current_price - (tick * ENTRY_OFFSET_TICK)
+    entry=current-(tick*ENTRY_OFFSET_TICK)
 
-    stop_price = entry_price - (tick * EXIT_OFFSET_TICK)
+    stop=entry-(tick*EXIT_OFFSET_TICK)
 
-    trailing_distance = tick * EXIT_OFFSET_TICK
+    trailing=tick*EXIT_OFFSET_TICK
 
-    # -----------------------------------------------------
-    # POSITION SIZE
-    # -----------------------------------------------------
+    # -------------------------------------
+    # SIZE
+    # -------------------------------------
 
-    notional = ENTRY_MARGIN * LEVERAGE
+    notional=ENTRY_MARGIN*LEVERAGE
 
-    multiplier = float(contract.quanto_multiplier)
+    multiplier=float(
+        contract.quanto_multiplier
+    )
 
-    size = int(
-        notional /
-        entry_price /
+    size=int(
+        notional/
+        entry/
         multiplier
     )
 
-    if size <= 0:
-        size = 1
+    if size<=0:
+        size=1
 
-    # -----------------------------------------------------
+    # -------------------------------------
     # LEVERAGE
-    # -----------------------------------------------------
+    # -------------------------------------
 
     set_leverage()
 
-    logs.append("")
-    logs.append("Leverage Updated")
+    # -------------------------------------
+    # CREATE ORDER
+    # -------------------------------------
 
-    # -----------------------------------------------------
-    # CREATE ENTRY
-    # -----------------------------------------------------
-
-    order = FuturesOrder(
+    new_order=FuturesOrder(
         contract=SYMBOL,
         size=size,
-        price=str(round(entry_price, 6)),
+        price=str(round(entry,6)),
         tif="gtc"
     )
 
-    result = futures_api.create_futures_order(
+    result=futures_api.create_futures_order(
         settle=SETTLE,
-        futures_order=order
+        futures_order=new_order
     )
 
-    # -----------------------------------------------------
+    # -------------------------------------
     # REPORT
-    # -----------------------------------------------------
+    # -------------------------------------
 
     logs.append("")
-    logs.append("=== ENTRY CREATED ===")
+    logs.append(
+        "ENTRY CREATED"
+    )
 
-    logs.append(f"Symbol            : {SYMBOL}")
-    logs.append(f"Current Price     : {current_price}")
-    logs.append(f"Tick Size         : {tick}")
+    logs.append(
+        f"Current : {current}"
+    )
 
-    logs.append(f"Entry Offset Tick : {ENTRY_OFFSET_TICK}")
-    logs.append(f"Entry Price       : {entry_price}")
+    logs.append(
+        f"Entry : {entry}"
+    )
 
-    logs.append(f"Leverage          : {LEVERAGE}x")
-    logs.append(f"Margin            : ${ENTRY_MARGIN}")
+    logs.append(
+        f"Stop : {stop}"
+    )
 
-    logs.append(f"Position Size     : {size}")
+    logs.append(
+        f"Trailing : {trailing}"
+    )
 
-    logs.append("")
-    logs.append("=== EXIT RULE ===")
+    logs.append(
+        f"Size : {size}"
+    )
 
-    logs.append(f"Trailing Distance : {trailing_distance}")
-    logs.append(f"Stop Loss Price   : {stop_price}")
+    logs.append(
+        f"Order ID : {result.id}"
+    )
 
-    logs.append("")
-    logs.append("=== ORDER RESULT ===")
+    msg="\n".join(logs)
 
-    logs.append(f"Order ID : {result.id}")
-    logs.append(f"Status   : {result.status}")
+    print(msg)
 
-    message = "\n".join(logs)
+    notify(msg)
 
-    print(message)
 
-    notify(message)
+# =====================================================
 
-# =========================================================
-
-if __name__ == "__main__":
+if __name__=="__main__":
 
     try:
 
@@ -330,8 +407,8 @@ if __name__ == "__main__":
 
     except Exception as e:
 
-        error_msg = f"BOT ERROR:\n{str(e)}"
+        error=f"BOT ERROR:\n{str(e)}"
 
-        print(error_msg)
+        print(error)
 
-        notify(error_msg)
+        notify(error)
