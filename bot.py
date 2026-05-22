@@ -1,50 +1,58 @@
 import os
+import random
 import requests
-import gate_api
+from gate_api import Configuration, ApiClient
 
-from gate_api import (
-    ApiClient,
-    Configuration,
-    FuturesApi,
-    SpotApi,
-    FuturesOrder
+# =====================================
+# DEMO API
+# =====================================
+
+GATE_KEY=os.getenv(
+    "GATE_KEY",
+    ""
 )
 
-# =====================================================
-# CONFIG
-# =====================================================
-
-SYMBOL="XRP_USDT"
-SETTLE="usdt"
-
-LEVERAGE=30
-ENTRY_MARGIN=1
-
-ENTRY_OFFSET_TICK=10
-EXIT_OFFSET_TICK=100
-
-MIN_BALANCE=5
-
-NTFY_TOPIC="ALUR"
-
-# =====================================================
-# API
-# =====================================================
+GATE_SECRET=os.getenv(
+    "GATE_SECRET",
+    ""
+)
 
 config=Configuration(
     host="https://api.gateio.ws/api/v4",
-    key=os.environ["GATE_KEY"],
-    secret=os.environ["GATE_SECRET"]
+    key=GATE_KEY,
+    secret=GATE_SECRET
 )
 
 client=ApiClient(config)
 
-futures_api=FuturesApi(client)
-spot_api=SpotApi(client)
+# =====================================
+# STRATEGY
+# =====================================
 
-# =====================================================
+SYMBOL="XRP_USDT"
+
+INITIAL_BALANCE=5.0
+balance=INITIAL_BALANCE
+
+ENTRY_MARGIN=0.10
+LEVERAGE=100
+
+ENTRY_TICK=10
+TP_TICK=20
+SL_TICK=20
+
+TICK=0.0001
+FEE_RATE=0.0004
+
+NTFY_TOPIC="ALUR"
+
+trade_count=0
+win_count=0
+loss_count=0
+
+# =====================================
 # NTFY
-# =====================================================
+# =====================================
 
 def notify(message):
 
@@ -53,362 +61,269 @@ def notify(message):
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
             data=message.encode("utf-8"),
-            headers={
-                "Title":"Gate Bot",
-                "Priority":"default"
-            },
-            timeout=15
+            timeout=10
         )
 
     except Exception as e:
 
-        print("NTFY ERROR:",e)
-
-# =====================================================
-# BALANCE
-# =====================================================
-
-def get_spot_balance():
-
-    try:
-
-        accounts=spot_api.list_spot_accounts(
-            currency="USDT"
+        print(
+            "Notify Error:",
+            e
         )
 
-        total=0.0
-
-        for a in accounts:
-
-            try:
-                total+=float(a.available)
-            except:
-                pass
-
-        return total
-
-    except:
-
-        return 0.0
-
-
-def get_futures_balance():
-
-    try:
-
-        account=futures_api.list_futures_accounts(
-            settle=SETTLE
-        )
-
-        try:
-            return float(account.available)
-
-        except:
-
-            try:
-                return float(account.total)
-
-            except:
-                return 0.0
-
-    except:
-
-        return 0.0
-
-
-# =====================================================
-# OPEN POSITION
-# =====================================================
-
-def has_open_position():
-
-    try:
-
-        positions=futures_api.list_positions(
-            settle=SETTLE
-        )
-
-        for p in positions:
-
-            if p.contract==SYMBOL:
-
-                try:
-
-                    if abs(float(p.size))>0:
-                        return True
-
-                except:
-                    pass
-
-    except Exception as e:
-
-        print(e)
-
-    return False
-
-
-# =====================================================
-# OPEN ORDER
-# =====================================================
-
-def has_open_order():
-
-    try:
-
-        orders=futures_api.list_futures_orders(
-            settle=SETTLE,
-            status="open"
-        )
-
-        for o in orders:
-
-            if o.contract==SYMBOL:
-                return True
-
-    except Exception as e:
-
-        print(e)
-
-    return False
-
-
-# =====================================================
-# MARKET
-# =====================================================
-
-def get_contract():
-
-    return futures_api.get_futures_contract(
-        settle=SETTLE,
-        contract=SYMBOL
-    )
-
+# =====================================
+# PRICE
+# =====================================
 
 def get_price():
 
-    ticker=futures_api.list_futures_tickers(
-        settle=SETTLE,
-        contract=SYMBOL
-    )
-
-    return float(ticker[0].last)
-
-
-# =====================================================
-# LEVERAGE
-# =====================================================
-
-def set_leverage():
-
     try:
 
-        futures_api.update_position_leverage(
-            settle=SETTLE,
-            contract=SYMBOL,
-            leverage=str(LEVERAGE)
+        r=requests.get(
+            "https://api.gateio.ws/api/v4/futures/usdt/tickers",
+            timeout=10
         )
 
-        return True
+        data=r.json()
+
+        for item in data:
+
+            if item["contract"]==SYMBOL:
+
+                return float(
+                    item["last"]
+                )
 
     except Exception as e:
 
-        print(e)
-
-        return False
-
-
-# =====================================================
-# MAIN
-# =====================================================
-
-def main():
-
-    logs=[]
-
-    logs.append("=== GATE BOT REPORT ===")
-
-    # -------------------------------------
-
-    spot_balance=get_spot_balance()
-
-    futures_balance=get_futures_balance()
-
-    total_balance=spot_balance+futures_balance
-
-    logs.append(
-        f"Spot : ${spot_balance:.4f}"
-    )
-
-    logs.append(
-        f"Futures : ${futures_balance:.4f}"
-    )
-
-    logs.append(
-        f"Total : ${total_balance:.4f}"
-    )
-
-    # -------------------------------------
-    # BALANCE FILTER
-    # -------------------------------------
-
-    if total_balance<MIN_BALANCE:
-
-        logs.append("")
-        logs.append(
-            "STATUS : BALANCE BELOW MINIMUM"
+        print(
+            "Price Error:",
+            e
         )
 
-        msg="\n".join(logs)
+    return 1.40
 
-        print(msg)
 
-        notify(msg)
+# =====================================
+# SIMULATION
+# =====================================
 
-        return
-
-    # -------------------------------------
-    # POSITION FILTER
-    # -------------------------------------
-
-    position=has_open_position()
-
-    order=has_open_order()
-
-    logs.append("")
-    logs.append(
-        f"Open Position : {position}"
-    )
-
-    logs.append(
-        f"Open Order : {order}"
-    )
-
-    if position or order:
-
-        logs.append("")
-        logs.append(
-            "STATUS : EXISTING TRADE DETECTED"
-        )
-
-        msg="\n".join(logs)
-
-        print(msg)
-
-        notify(msg)
-
-        return
-
-    # -------------------------------------
-    # PRICE
-    # -------------------------------------
-
-    contract=get_contract()
+def simulate_trade():
 
     current=get_price()
 
-    tick=float(
-        contract.order_price_round
+    entry=current-(ENTRY_TICK*TICK)
+
+    tp=entry+(TP_TICK*TICK)
+
+    sl=entry-(SL_TICK*TICK)
+
+    position=ENTRY_MARGIN*LEVERAGE
+
+    amount=position/entry
+
+    fee=position*FEE_RATE
+
+    simulated_move=random.randint(
+        -50,
+        50
     )
 
-    entry=current-(tick*ENTRY_OFFSET_TICK)
-
-    stop=entry-(tick*EXIT_OFFSET_TICK)
-
-    trailing=tick*EXIT_OFFSET_TICK
-
-    # -------------------------------------
-    # SIZE
-    # -------------------------------------
-
-    notional=ENTRY_MARGIN*LEVERAGE
-
-    multiplier=float(
-        contract.quanto_multiplier
+    simulated_price=entry+(
+        simulated_move*TICK
     )
 
-    size=int(
-        notional/
-        entry/
-        multiplier
+    pnl=0
+    result=""
+
+    if simulated_price>=tp:
+
+        result="WIN"
+
+        pnl=amount*(
+            tp-entry
+        )
+
+    elif simulated_price<=sl:
+
+        result="LOSS"
+
+        pnl=amount*(
+            sl-entry
+        )
+
+    else:
+
+        result="OPEN"
+
+        pnl=amount*(
+            simulated_price-entry
+        )
+
+    pnl-=fee
+
+    return {
+
+        "current":current,
+        "entry":entry,
+        "tp":tp,
+        "sl":sl,
+        "position":position,
+        "amount":amount,
+        "fee":fee,
+        "result":result,
+        "pnl":pnl,
+        "simulated_price":simulated_price
+
+    }
+
+
+# =====================================
+# MAIN
+# =====================================
+
+def main():
+
+    global balance
+    global trade_count
+    global win_count
+    global loss_count
+
+    trade=simulate_trade()
+
+    trade_count+=1
+
+    if trade["result"]=="WIN":
+
+        win_count+=1
+
+    elif trade["result"]=="LOSS":
+
+        loss_count+=1
+
+    balance+=trade["pnl"]
+
+    win_rate=0
+
+    if trade_count>0:
+
+        win_rate=(
+            win_count/
+            trade_count
+        )*100
+
+
+    report=[]
+
+    report.append(
+        "=== GATE XRP SIMULATOR ==="
     )
 
-    if size<=0:
-        size=1
+    report.append("")
 
-    # -------------------------------------
-    # LEVERAGE
-    # -------------------------------------
+    if GATE_KEY:
 
-    set_leverage()
+        report.append(
+            f"Demo API: {GATE_KEY[:4]}****"
+        )
 
-    # -------------------------------------
-    # CREATE ORDER
-    # -------------------------------------
+    else:
 
-    new_order=FuturesOrder(
-        contract=SYMBOL,
-        size=size,
-        price=str(round(entry,6)),
-        tif="gtc"
+        report.append(
+            "Demo API: Not configured"
+        )
+
+    report.append("")
+
+    report.append(
+        f"Trade: {trade_count}"
     )
 
-    result=futures_api.create_futures_order(
-        settle=SETTLE,
-        futures_order=new_order
+    report.append(
+        f"Balance: ${balance:.4f}"
     )
 
-    # -------------------------------------
-    # REPORT
-    # -------------------------------------
-
-    logs.append("")
-    logs.append(
-        "ENTRY CREATED"
+    report.append(
+        "(balance hanya pelaporan)"
     )
 
-    logs.append(
-        f"Current : {current}"
+    report.append("")
+
+    report.append(
+        f"Margin: ${ENTRY_MARGIN}"
     )
 
-    logs.append(
-        f"Entry : {entry}"
+    report.append(
+        f"Leverage: {LEVERAGE}x"
     )
 
-    logs.append(
-        f"Stop : {stop}"
+    report.append(
+        f"Position: ${trade['position']:.2f}"
     )
 
-    logs.append(
-        f"Trailing : {trailing}"
+    report.append(
+        f"XRP Size: {trade['amount']:.4f}"
     )
 
-    logs.append(
-        f"Size : {size}"
+    report.append("")
+
+    report.append(
+        f"Current: {trade['current']:.4f}"
     )
 
-    logs.append(
-        f"Order ID : {result.id}"
+    report.append(
+        f"Entry: {trade['entry']:.4f}"
     )
 
-    msg="\n".join(logs)
+    report.append(
+        f"TP: {trade['tp']:.4f}"
+    )
 
-    print(msg)
+    report.append(
+        f"SL: {trade['sl']:.4f}"
+    )
 
-    notify(msg)
+    report.append(
+        f"Simulated Price: {trade['simulated_price']:.4f}"
+    )
 
+    report.append("")
 
-# =====================================================
+    report.append(
+        f"Fee: ${trade['fee']:.5f}"
+    )
+
+    report.append(
+        f"Result: {trade['result']}"
+    )
+
+    report.append(
+        f"PnL: ${trade['pnl']:.5f}"
+    )
+
+    report.append("")
+
+    report.append(
+        f"Wins: {win_count}"
+    )
+
+    report.append(
+        f"Losses: {loss_count}"
+    )
+
+    report.append(
+        f"Win Rate: {win_rate:.2f}%"
+    )
+
+    text="\n".join(
+        report
+    )
+
+    print(text)
+
+    notify(text)
+
 
 if __name__=="__main__":
 
-    try:
-
-        main()
-
-    except Exception as e:
-
-        error=f"BOT ERROR:\n{str(e)}"
-
-        print(error)
-
-        notify(error)
+    main()
