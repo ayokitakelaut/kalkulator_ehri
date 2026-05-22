@@ -1,2 +1,2 @@
-gate-api==6.97.0
-requests==2.32.3
+gate-api>=7.2.0
+requests>=2.32.0
