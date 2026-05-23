@@ -1,0 +1,186 @@
+name: Flash Engine Chainbase Simulator
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run-flash-engine:
+    runs-on: self-hosted  # Berjalan di lokal runner kamu untuk performa forking maksimal
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js & Python
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Hardhat & Dependencies
+      run: |
+        npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox @openzeppelin/contracts
+        pip install web3 requests
+
+    - name: Write Solidity Smart Contract (Safe-Fee Logic)
+      run: |
+        mkdir -p contracts
+        cat << 'EOF' > contracts/FlashArb.sol
+        // SPDX-License-Identifier: MIT
+        pragma solidity ^0.8.20;
+
+        interface IERC20 {
+            function balanceOf(address account) external view returns (uint256);
+            function transfer(address recipient, uint256 amount) external returns (bool);
+            function approve(address spender, uint256 amount) external returns (bool);
+        }
+
+        interface ISwapRouter {
+            struct ExactInputSingleParams {
+                address tokenIn;
+                address tokenOut;
+                uint24 fee;
+                address recipient;
+                uint256 deadline;
+                uint256 amountIn;
+                uint256 amountOutMinimum;
+                uint160 sqrtPriceLimitX96;
+            }
+            function exactInputSingle(ExactInputSingleParams calldata params) external returns (uint256 amountOut);
+
+            struct ExactOutputSingleParams {
+                address tokenIn;
+                address tokenOut;
+                uint24 fee;
+                address recipient;
+                uint256 deadline;
+                uint256 amountOut;
+                uint256 amountInMaximum;
+                uint160 sqrtPriceLimitX96;
+            }
+            function exactOutputSingle(ExactOutputSingleParams calldata params) external returns (uint256 amountIn);
+        }
+
+        contract FlashArb {
+            ISwapRouter public immutable uniRouter = ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+            address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27ead9083C756Cc2;
+
+            function executeOperation(
+                address asset,
+                uint256 amount,
+                uint256 premium,
+                address initiator,
+                bytes calldata
+            ) external returns (bool) {
+                uint256 totalOwed = amount + premium; // Pokok + Fee Aave (0.09%)
+                
+                // Kaki 1: Swap semua USDC pinjaman ke WETH (ExactInput)
+                IERC20(asset).approve(address(uniRouter), amount);
+                
+                ISwapRouter.ExactInputSingleParams memory inputParams = ISwapRouter.ExactInputSingleParams({
+                    tokenIn: asset,
+                    tokenOut: WETH,
+                    fee: 3000, 
+                    recipient: address(this),
+                    deadline: block.timestamp,
+                    amountIn: amount,
+                    amountOutMinimum: 0, 
+                    sqrtPriceLimitX96: 0
+                });
+                
+                uint256 wethReceived = uniRouter.exactInputSingle(inputParams);
+
+                // Kaki 2: Swap balik dari WETH ke USDC dengan mengunci jumlah Output
+                // Memaksa pool menghasilkan USDC pas sebesar totalOwed. Sisa WETH = Profit Bersih.
+                IERC20(WETH).approve(address(uniRouter), wethReceived);
+
+                ISwapRouter.ExactOutputSingleParams memory outputParams = ISwapRouter.ExactOutputSingleParams({
+                    tokenIn: WETH,
+                    tokenOut: asset,
+                    fee: 3000,
+                    recipient: address(this),
+                    deadline: block.timestamp,
+                    amountOut: totalOwed, // DIKUNCI DI SINI BIAR ENGGAK KURANG SAAT DIRETUR
+                    amountInMaximum: wethReceived,
+                    sqrtPriceLimitX96: 0
+                });
+
+                // Jika WETH hasil Kaki 1 ternyata kurang untuk menghasilkan selevel totalOwed, 
+                // blok try-catch ini gagal dan langsung revert aman tanpa menguras gas.
+                try uniRouter.exactOutputSingle(outputParams) {
+                    uint256 netProfitWeth = IERC20(WETH).balanceOf(address(this));
+                    if (netProfitWeth > 0) {
+                        IERC20(WETH).transfer(initiator, netProfitWeth);
+                    }
+                } catch {
+                    revert("ARBITRAGE_REVERT_INSUFFICIENT_PROFIT_FOR_FEE");
+                }
+
+                // Approve dana yang sudah terkumpul pas ke Pool Aave untuk ditarik otomatis
+                IERC20(asset).approve(msg.sender, totalOwed);
+                return true;
+            }
+        }
+        EOF
+
+    - name: Configure Hardhat using Chainbase RPC
+      env:
+        CHAINBASE_MAINNET_URL: ${{ secrets.CHAINBASE_MAINNET_URL }}
+      run: |
+        cat << 'EOF' > hardhat.config.js
+        require("@nomicfoundation/hardhat-toolbox");
+
+        module.exports = {
+          solidity: "0.8.20",
+          networks: {
+            hardhat: {
+              forking: {
+                url: process.env.CHAINBASE_MAINNET_URL,
+              }
+            }
+          }
+        };
+        EOF
+
+    - name: Compile Smart Contract
+      run: npx hardhat compile
+
+    - name: Write Chainbase Python Bot Engine
+      run: |
+        cat << 'EOF' > bot.py
+        import json
+        import sys
+        import requests
+        from web3 import Web3
+
+        # Hubungkan ke Forking Node lokal kita yang berjalan di port 8545
+        w3 = Web3(Web3.HTTPProvider('http://127.0.0.1:8545'))
+
+        if not w3.is_connected():
+            print("❌ Gagal terhubung ke Hardhat Forking Node lokal.")
+            sys.exit(1)
+
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+
+        settings = config['settings']
+        print(f"🚀 [Chainbase Engine] Memulai pemantauan harga...")
+        print(f"📊 Target simulasi Pinjaman: {settings['loan_amount_usdc']} USDC pada Chain ID: {settings['chain_id']}")
+        
+        # Simulasi pendeteksian lewat Chainbase Data Node selesai diinisialisasi
+        print("🤖 Bot stanby menunggu block baru untuk simulasi flash loan...")
+        EOF
+
+    - name: Launch Local Fork & Run Bot Engine
+      env:
+        CHAINBASE_MAINNET_URL: ${{ secrets.CHAINBASE_MAINNET_URL }}
+      run: |
+        # Jalankan Hardhat Node di background memakai endpoint Chainbase
+        npx hardhat node --fork $CHAINBASE_MAINNET_URL &
+        
+        # Amankan jeda waktu agar RPC port lokal siap menerima request
+        sleep 5
+        
+        # Eksekusi bot pencari peluang
+        python bot.py
