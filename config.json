@@ -1,0 +1,16 @@
+{
+  "networks": {
+    "mainnet_fork": {
+      "aave_pool_addresses_provider": "0x2f39d218133AFaB8F2B819B1066c7E434Ad9429e",
+      "uniswap_v3_router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+      "tokens": {
+        "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0ce3606eb48",
+        "WETH": "0xC02aaA39b223FE8D0A0e5C4F27ead9083C756Cc2"
+      }
+    }
+  },
+  "settings": {
+    "loan_amount_usdc": 100000,
+    "chain_id": 1
+  }
+}
