@@ -51,7 +51,8 @@ def main():
 
     try:
         # 1. CEK SALDO DOMPET PERPETUAL (USDT-M)
-        account = futures_api.get_futures_account(SETTLE)
+        # Diperbaiki ke list_futures_accounts agar sesuai dengan SDK Python Gate.io
+        account = futures_api.list_futures_accounts(SETTLE)
         perp_usdt = float(account.available)
         report.append(f"• Saldo Perp Tersedia : ${perp_usdt:.4f}")
 
