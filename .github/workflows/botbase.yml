@@ -14,16 +14,32 @@ jobs:
     - name: Setup Node.js Environment
       uses: actions/setup-node@v4
       with:
-        node-version: '22' # Diperbarui ke Node.js 22 untuk mendukung spesifikasi Hardhat terbaru
+        node-version: '22' # Mendukung spesifikasi Hardhat terbaru
 
     - name: Setup Python Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Install Hardhat & Framework Dependencies
+    - name: Write Package Specification (package.json)
       run: |
-        npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox @openzeppelin/contracts
+        cat << 'EOF' > package.json
+        {
+          "name": "flash-engine-v2-tester",
+          "version": "1.0.0",
+          "type": "module",
+          "description": "On-demand validation environment for flash loan arbitrage",
+          "devDependencies": {
+            "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+            "@openzeppelin/contracts": "^5.0.0",
+            "hardhat": "^2.22.0"
+          }
+        }
+        EOF
+
+    - name: Install Framework Dependencies
+      run: |
+        npm install
         pip install web3 requests
 
     - name: Write Solidity Smart Contract (Safe-Fee Logic)
@@ -127,9 +143,9 @@ jobs:
         CHAINBASE_MAINNET_URL: ${{ secrets.CHAINBASE_MAINNET_URL }}
       run: |
         cat << 'EOF' > hardhat.config.js
-        require("@nomicfoundation/hardhat-toolbox");
+        import "@nomicfoundation/hardhat-toolbox";
 
-        module.exports = {
+        export default {
           solidity: "0.8.20",
           networks: {
             hardhat: {
