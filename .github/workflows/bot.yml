@@ -1,11 +1,9 @@
-name: Gate.io Perpetual Bot (XRP/USDT 50x)
+name: Gate.io Perpetual Bot
 
 on:
   schedule:
-    # Berjalan otomatis setiap 5 menit secara nonstop
     - cron: '*/5 * * * *'
   workflow_dispatch:
-    # Menyediakan tombol "Run workflow" manual di dashboard GitHub Actions
 
 jobs:
   trade-execution:
@@ -14,24 +12,19 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        description: "Mengunduh file bot.py dari repositori ke runner GitHub"
 
       - name: Setup Python Environment
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # Mempercepat eksekusi berikutnya dengan caching package
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install gate-api requests
-        description: "Menginstal pustaka Gate.io API dan HTTP Requests"
 
       - name: Run Trading Bot
         env:
-          # Menghubungkan GitHub Secrets dengan Environment Variables sistem
           GATE_KEY: ${{ secrets.GATE_KEY }}
           GATE_SECRET: ${{ secrets.GATE_SECRET }}
         run: python bot.py
-        description: "Mengeksekusi logika trading dan mengirim laporan ke ntfy"
