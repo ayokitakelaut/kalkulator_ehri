@@ -67,7 +67,8 @@ jobs:
 
         contract FlashArb {
             ISwapRouter public immutable uniRouter = ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
-            address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27ead9083C756Cc2;
+            // Perbaikan Checksum EIP-55 pada alamat WETH (huruf eAD besar)
+            address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
             function executeOperation(
                 address asset,
