@@ -21,22 +21,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Write Package Specification (package.json)
-      run: |
-        cat << 'EOF' > package.json
-        {
-          "name": "flash-engine-v2-tester",
-          "version": "1.0.0",
-          "type": "module",
-          "description": "On-demand validation environment for flash loan arbitrage",
-          "devDependencies": {
-            "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-            "@openzeppelin/contracts": "^5.0.0",
-            "hardhat": "^2.22.0"
-          }
-        }
-        EOF
-
     - name: Install Framework Dependencies
       run: |
         npm install
@@ -117,7 +101,7 @@ jobs:
                     fee: 3000,
                     recipient: address(this),
                     deadline: block.timestamp,
-                    amountOut: totalOwed, // DIKUNCI DI SINI BIAR ENGGAK REVERT KARENA SISA DANA KURANG
+                    amountOut: totalOwed,
                     amountInMaximum: wethReceived,
                     sqrtPriceLimitX96: 0
                 });
@@ -142,24 +126,23 @@ jobs:
         cat << 'EOF' > hardhat.config.js
         import "@nomicfoundation/hardhat-toolbox";
 
-        // Tambahkan pengaman "" jika env tidak terbaca sewaktu melakukan kompilasi kontrak pasif
-        const FORK_URL = process.env.CHAINBASE_MAINNET_URL || "https://eth-mainnet.gateway.chainbase.online/v1/dummy";
+        const hardhatNetworkConfig = {};
+
+        if (process.env.CHAINBASE_MAINNET_URL) {
+          hardhatNetworkConfig.forking = {
+            url: process.env.CHAINBASE_MAINNET_URL
+          };
+        }
 
         export default {
           solidity: "0.8.20",
           networks: {
-            hardhat: {
-              forking: {
-                url: FORK_URL,
-              }
-            }
+            hardhat: hardhatNetworkConfig
           }
         };
         EOF
 
     - name: Compile Smart Contract
-      env:
-        CHAINBASE_MAINNET_URL: ${{ secrets.CHAINBASE_MAINNET_URL }}
       run: npx hardhat compile
 
     - name: Write Single-Run Test Script
@@ -169,7 +152,6 @@ jobs:
         import sys
         from web3 import Web3
 
-        # Hubungkan ke Forking Node lokal di dalam server virtual GitHub
         w3 = Web3(Web3.HTTPProvider('http://127.0.0.1:8545'))
 
         if not w3.is_connected():
@@ -178,8 +160,6 @@ jobs:
 
         print("✅ Berhasil terhubung ke Mainnet Forking via Chainbase!")
         print("⚡ Menjalankan simulasi kalkulasi block tunggal...")
-        
-        # Di sini script melakukan call pasif untuk simulasi trading sekali jalan
         print("📊 Hasil Uji Coba: Logika Kontrak Terkompilasi dan Valid.")
         print("👋 Simulasi selesai. Mematikan VM GitHub...")
         EOF
@@ -188,7 +168,7 @@ jobs:
       env:
         CHAINBASE_MAINNET_URL: ${{ secrets.CHAINBASE_MAINNET_URL }}
       run: |
-        # Jalankan Hardhat Node di background virtual runner menggunakan RPC asli
+        # Jalankan Hardhat Node di background menggunakan RPC asli
         npx hardhat node --fork $CHAINBASE_MAINNET_URL &
         
         # Tunggu port local RPC terbuka penuh
